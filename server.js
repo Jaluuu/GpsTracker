@@ -11,11 +11,11 @@ app.use(express.json());
 
 // ── LANGKAH 1: Hubungkan ke Firebase ────────────────────────
 // File serviceAccountKey.json harus ada di folder yang sama!
-const serviceAccount = require('./serviceAccountKey.json');
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
   credential:  admin.credential.cert(serviceAccount),
-  databaseURL: 'https://gps-tracker-8ce15-default-rtdb.firebaseio.com/'
+  databaseURL: process.env.FIREBASE_DATABASE_URL
   //            ↑↑↑ GANTI dengan URL database Firebase kamu!
 });
 
