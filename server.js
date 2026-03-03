@@ -141,6 +141,23 @@ app.post('/test', async (req, res) => {
   res.json({ berhasil });
 });
 
+// Test via browser (GET)
+app.get('/test', async (req, res) => {
+  const tokenSnap = await db.ref('gpstracker/device/fcmToken').once('value');
+  const fcmToken  = tokenSnap.val();
+
+  if (!fcmToken) {
+    return res.status(404).json({ error: 'Token HP tidak ditemukan. Buka app dulu!' });
+  }
+
+  const berhasil = await kirimNotifikasi(
+    fcmToken, -7.629639, 111.523438,
+    new Date().toLocaleString('id-ID')
+  );
+
+  res.json({ berhasil });
+});
+
 // ── Jalankan server ─────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
