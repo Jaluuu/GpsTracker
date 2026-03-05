@@ -9,31 +9,27 @@ const app     = express();
 
 app.use(express.json());
 
-// ── LANGKAH 1: Hubungkan ke Firebase ────────────────────────
-// File serviceAccountKey.json harus ada di folder yang sama!
+// ── Hubungkan ke Firebase ────────────────────────────────────
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
   credential:  admin.credential.cert(serviceAccount),
   databaseURL: process.env.FIREBASE_DATABASE_URL
-  //            ↑↑↑ GANTI dengan URL database Firebase kamu!
 });
 
 const db = admin.database();
 console.log('✅ Terhubung ke Firebase!');
 
-// ── LANGKAH 2: Fungsi kirim notifikasi ke HP ────────────────
+// ── Fungsi kirim notifikasi ke HP ────────────────────────────
 async function kirimNotifikasi(fcmToken, lat, lng, waktu) {
   const pesan = {
     token: fcmToken,
 
-    // Ini yang muncul di layar HP
-    notification: {
-      title: '🚨 Alarm Keamanan!',
-      body:  `Kendaraan bergerak! Lat: ${parseFloat(lat).toFixed(5)}, Long: ${parseFloat(lng).toFixed(5)}`,
-    },
+    // ❌ HAPUS field "notification" — agar onMessageReceived
+    //    selalu dipanggil meski app mati/background
+    //    Suara & getar dihandle oleh GpsTrackerFCMService.kt
 
-    // Data tambahan yang dibaca oleh app Android
+    // ✅ Hanya kirim "data" saja
     data: {
       type:      'alarm_triggered',
       latitude:  String(lat),
@@ -41,15 +37,9 @@ async function kirimNotifikasi(fcmToken, lat, lng, waktu) {
       timestamp: String(waktu),
     },
 
-    // Pengaturan Android: prioritas tinggi agar HP "bangun"
+    // Prioritas high agar HP "bangun" dari sleep
     android: {
       priority: 'high',
-      notification: {
-        channelId: 'gps_alarm_channel',
-        priority:  'max',
-        sound:     'default',
-        color:     '#D32F2F',
-      },
     },
   };
 
@@ -63,7 +53,7 @@ async function kirimNotifikasi(fcmToken, lat, lng, waktu) {
   }
 }
 
-// ── LANGKAH 3: Pantau Firebase terus-menerus ────────────────
+// ── Pantau Firebase terus-menerus ────────────────────────────
 let statusTerakhir = null;
 
 function mulaiPantau() {
@@ -80,7 +70,6 @@ function mulaiPantau() {
     const lng    = data.longitude || 0;
     const waktu  = data.timestamp || new Date().toLocaleString('id-ID');
 
-    // Hanya kirim notifikasi saat status BARU menjadi "triggered"
     if (status === 'triggered' && statusTerakhir !== 'triggered') {
       console.log('\n⚠️  ALARM! Kendaraan bergerak!');
       console.log(`   Lokasi: ${lat}, ${lng}`);
@@ -88,20 +77,17 @@ function mulaiPantau() {
 
       statusTerakhir = 'triggered';
 
-      // Ambil token HP dari Firebase
       const tokenSnap = await db.ref('gpstracker/device/fcmToken').once('value');
       const fcmToken  = tokenSnap.val();
 
       if (!fcmToken) {
-        console.log('❌ Token HP tidak ditemukan. Pastikan app Android sudah dibuka minimal sekali!');
+        console.log('❌ Token HP tidak ditemukan!');
         return;
       }
 
-      // Kirim notifikasi!
       const berhasil = await kirimNotifikasi(fcmToken, lat, lng, waktu);
 
       if (berhasil) {
-        // Tandai di Firebase bahwa notifikasi sudah dikirim
         await db.ref('gpstracker/alarm').update({
           notificationSent: true,
           notificationTime: new Date().toLocaleString('id-ID'),
@@ -115,50 +101,40 @@ function mulaiPantau() {
   });
 }
 
-// ── Endpoint untuk cek server masih hidup ───────────────────
+// ── Endpoint health check ────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
-    pesan:   'Server GPS Tracker berjalan!',
-    status:  statusTerakhir,
-    waktu:   new Date().toLocaleString('id-ID'),
+    pesan:  'Server GPS Tracker berjalan!',
+    status: statusTerakhir,
+    waktu:  new Date().toLocaleString('id-ID'),
   });
 });
 
-// Endpoint test kirim notifikasi manual
+// ── Endpoint test (POST) ─────────────────────────────────────
 app.post('/test', async (req, res) => {
   const tokenSnap = await db.ref('gpstracker/device/fcmToken').once('value');
   const fcmToken  = tokenSnap.val();
-
-  if (!fcmToken) {
-    return res.status(404).json({ error: 'Token HP tidak ditemukan' });
-  }
-
+  if (!fcmToken) return res.status(404).json({ error: 'Token HP tidak ditemukan' });
   const berhasil = await kirimNotifikasi(
     fcmToken, -7.629639, 111.523438,
     new Date().toLocaleString('id-ID')
   );
-
   res.json({ berhasil });
 });
 
-// Test via browser (GET)
+// ── Endpoint test (GET) via browser ─────────────────────────
 app.get('/test', async (req, res) => {
   const tokenSnap = await db.ref('gpstracker/device/fcmToken').once('value');
   const fcmToken  = tokenSnap.val();
-
-  if (!fcmToken) {
-    return res.status(404).json({ error: 'Token HP tidak ditemukan. Buka app dulu!' });
-  }
-
+  if (!fcmToken) return res.status(404).json({ error: 'Token HP tidak ditemukan. Buka app dulu!' });
   const berhasil = await kirimNotifikasi(
     fcmToken, -7.629639, 111.523438,
     new Date().toLocaleString('id-ID')
   );
-
   res.json({ berhasil });
 });
 
-// ── Jalankan server ─────────────────────────────────────────
+// ── Jalankan server ──────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`\n🚀 Server berjalan di http://localhost:${PORT}`);
