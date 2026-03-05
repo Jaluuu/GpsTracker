@@ -1,6 +1,5 @@
 // ============================================================
 //  GPS Tracker - Backend FCM Server
-//  Jalankan dengan: node server.js
 // ============================================================
 
 const express = require('express');
@@ -9,7 +8,6 @@ const app     = express();
 
 app.use(express.json());
 
-// ── Hubungkan ke Firebase ────────────────────────────────────
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -25,11 +23,13 @@ async function kirimNotifikasi(fcmToken, lat, lng, waktu) {
   const pesan = {
     token: fcmToken,
 
-    // ❌ HAPUS field "notification" — agar onMessageReceived
-    //    selalu dipanggil meski app mati/background
-    //    Suara & getar dihandle oleh GpsTrackerFCMService.kt
+    // ✅ Kembalikan notification agar muncul di bar HP
+    notification: {
+      title: '🚨 Alarm Keamanan!',
+      body:  `Kendaraan bergerak! Lat: ${parseFloat(lat).toFixed(5)}, Long: ${parseFloat(lng).toFixed(5)}`,
+    },
 
-    // ✅ Hanya kirim "data" saja
+    // ✅ Data tetap ada agar onMessageReceived dipanggil juga
     data: {
       type:      'alarm_triggered',
       latitude:  String(lat),
@@ -37,9 +37,20 @@ async function kirimNotifikasi(fcmToken, lat, lng, waktu) {
       timestamp: String(waktu),
     },
 
-    // Prioritas high agar HP "bangun" dari sleep
     android: {
       priority: 'high',
+      // ✅ Kunci utama: tambahkan "direct_boot_ok" dan 
+      //    jangan set sound/vibrate di sini — biarkan Android handle
+      //    dari GpsTrackerFCMService.kt
+      notification: {
+        channelId:           'gps_alarm_channel',
+        priority:            'max',
+        defaultSound:        false,   // ← matikan suara default FCM
+        defaultVibrateTimings: false, // ← matikan getar default FCM
+        color:               '#D32F2F',
+        // Tidak set sound & vibrateTimings
+        // agar GpsTrackerFCMService yang handle keduanya
+      },
     },
   };
 
@@ -58,7 +69,6 @@ let statusTerakhir = null;
 
 function mulaiPantau() {
   const alarmRef = db.ref('gpstracker/alarm');
-
   console.log('👁️  Memantau Firebase... (tekan Ctrl+C untuk berhenti)');
 
   alarmRef.on('value', async (snapshot) => {
@@ -101,7 +111,6 @@ function mulaiPantau() {
   });
 }
 
-// ── Endpoint health check ────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
     pesan:  'Server GPS Tracker berjalan!',
@@ -110,7 +119,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// ── Endpoint test (POST) ─────────────────────────────────────
 app.post('/test', async (req, res) => {
   const tokenSnap = await db.ref('gpstracker/device/fcmToken').once('value');
   const fcmToken  = tokenSnap.val();
@@ -122,7 +130,6 @@ app.post('/test', async (req, res) => {
   res.json({ berhasil });
 });
 
-// ── Endpoint test (GET) via browser ─────────────────────────
 app.get('/test', async (req, res) => {
   const tokenSnap = await db.ref('gpstracker/device/fcmToken').once('value');
   const fcmToken  = tokenSnap.val();
@@ -134,7 +141,6 @@ app.get('/test', async (req, res) => {
   res.json({ berhasil });
 });
 
-// ── Jalankan server ──────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`\n🚀 Server berjalan di http://localhost:${PORT}`);
